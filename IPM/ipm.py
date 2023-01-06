@@ -15,7 +15,7 @@ class IPM():
         self.ipm_step_xy = args.ipm_step_xy
         self.ipm_height_y_start = args.ipm_height_y_start
         self.R_ccs2ocs = np.array(args.R_ccs2ocs).reshape(3,3)
-        self.t_ccs2ocs = np.array(args.t_ccs2ocs).reshape(3,1)
+        self.T_ccs2ocs = np.array(args.T_ccs2ocs).reshape(3,1)
         # 读入文件夹下所有图片
         if not os.path.exists(args.image_dir):
             os.makedirs(args.image_dir)
@@ -23,10 +23,16 @@ class IPM():
         self.images_name = sorted(os.listdir(args.image_dir))
         # self.images_list = [os.path.join(args.image_dir, f) for f in self.images_name]
         # 输出文件路径
+        if not os.path.exists(args.output_dir):
+            os.makedirs(args.output_dir)
         self.output_dir = args.output_dir
+        self.merge_dir = os.path.join(self.output_dir, "compare")
+        if not os.path.exists(self.merge_dir):
+            os.makedirs(self.merge_dir)
         # 计算IPM图像大小
         self.ipm_image_width = int(self.ipm_width_x_3d / self.ipm_step_xy)
         self.ipm_image_height = int(self.ipm_height_y_3d / self.ipm_step_xy)
+        self.resize = args.resize
 
         return
 
@@ -43,15 +49,15 @@ class IPM():
         A01 = self.R_ccs2ocs[2,1] * p_cn[0] - self.R_ccs2ocs[0,1]
         A10 = self.R_ccs2ocs[2,0] * p_cn[1] - self.R_ccs2ocs[1,0]
         A11 = self.R_ccs2ocs[2,1] * p_cn[1] - self.R_ccs2ocs[1,1]
-        b0 = self.t_ccs2ocs[0] - self.t_ccs2ocs[2] * p_cn[0]
-        b1 = self.t_ccs2ocs[1] - self.t_ccs2ocs[2] * p_cn[1]
+        b0 = self.T_ccs2ocs[0] - self.T_ccs2ocs[2] * p_cn[0]
+        b1 = self.T_ccs2ocs[1] - self.T_ccs2ocs[2] * p_cn[1]
         A = np.mat([[A00,A01],[A10,A11]])
         b = np.mat([b0,b1])
         X = solve(A,b)
         return X.A  # numpy.ndarray [2,1]
 
     def calc_uv_by_ccs_xy(self, pt_ccs):
-        pt_ocs = self.R_ccs2ocs @ pt_ccs + self.t_ccs2ocs.reshape(3)
+        pt_ocs = self.R_ccs2ocs @ pt_ccs + self.T_ccs2ocs.reshape(3)
         pt_ocs = pt_ocs / pt_ocs[2]
         pt_uv = self.K @ pt_ocs
         return (pt_uv + 0.5).astype(np.int32)
@@ -120,7 +126,7 @@ class IPM():
             rc_array[r*self.ipm_image_width+c,0] = r
             rc_array[r*self.ipm_image_width+c,1] = c
 
-        pt_ocs_array = pt_ccs_array @ self.R_ccs2ocs.transpose() + self.t_ccs2ocs.reshape(1,3)  #[N,3]
+        pt_ocs_array = pt_ccs_array @ self.R_ccs2ocs.transpose() + self.T_ccs2ocs.reshape(1,3)  #[N,3]
         pt_ocs_array = (pt_ocs_array / pt_ocs_array[:,2].reshape(-1,1))
         pt_uv_array = pt_ocs_array @ self.K.transpose()
         pt_uv_array = (pt_uv_array + 0.5).astype(np.int32)
@@ -145,7 +151,7 @@ class IPM():
 
         distortion = np.array(cam_0_distcoeffs, dtype=np.float32)
         map1, map2 = cv2.initUndistortRectifyMap(camera_matrix, distortion, None, camera_matrix, (width, height), cv2.CV_32FC1)
-        img = cv2.remap(img, map1, map2, interpolation=cv2.INTER_LINEAR)
+        img = cv2.remap(img, map1, map2, interpolation=cv2.INTER_NEAREST)
 
         return img
 
@@ -164,7 +170,7 @@ class IPM():
             try:    
                 # 输入图片大小与默认尺寸不匹配报错！提醒：如果图片大小不匹配需要对应修改内参矩阵和消失线
                 assert((img.shape[0]==self.raw_H) and (img.shape[1]==self.raw_W))
-                dst_path = os.path.join(self.output_dir,f)
+                dst_path = os.path.join(self.output_dir, f)
 
                 # 1
                 if 3 == self.raw_C:
@@ -172,17 +178,28 @@ class IPM():
                 else:
                     img_ipm = np.zeros((self.ipm_image_height, self.ipm_image_width), dtype=np.uint8)
                 img_ipm[ipm_rcs[:,0],ipm_rcs[:,1]] = img[img_uvs[:,1],img_uvs[:,0]]
-                dst_path = os.path.join(self.output_dir,f)
-                cv2.imwrite(dst_path, img_ipm)
-  
+
                 # 2
-                # out_ipm = cv2.warpPerspective(img, M, (self.ipm_image_width,self.ipm_image_height))
-                # cv2.imwrite(dst_path, out_ipm)
+                # img_ipm = cv2.warpPerspective(img, M, (self.ipm_image_width,self.ipm_image_height))
+
+                if self.resize is not None:
+                    img_ipm = cv2.resize(img_ipm, dsize=tuple(self.resize), interpolation=cv2.INTER_NEAREST)
  
-                print(f"save image {dst_path}")
+                cv2.imwrite(dst_path, img_ipm)
+                print(f"write image {dst_path}")
+
+                # # 原图与结果图对比
+                # if 3 == self.raw_C:
+                #     img_merge = np.zeros((img.shape[0] + img_ipm.shape[0], img.shape[1] + img_ipm.shape[1], 3), dtype=np.uint8)
+                # else:
+                #     img_merge = np.zeros((img.shape[0] + img_ipm.shape[0], img.shape[1] + img_ipm.shape[1]), dtype=np.uint8)
+                # img_merge[0:img.shape[0], 0:img.shape[1]] = img
+                # img_merge[0:img_ipm.shape[0], img.shape[1]:img_merge.shape[1]] = img_ipm
+                # merge_path = os.path.join(self.merge_dir, f)
+                # cv2.imwrite(merge_path, img_merge)
+                # print(f"write compare image {merge_path}")
             except:
-                print("Error: image size not match!")
-                sys.exit(1)
+                print(f"Warning: image {os.path.join(self.image_dir, f)} size not match!")
 
         return
 

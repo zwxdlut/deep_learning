@@ -1,6 +1,7 @@
 # Folders
 build/
 __pycache__/
+.vscode/
 
 # Files
 *.pyc

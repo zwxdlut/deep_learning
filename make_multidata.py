@@ -9,7 +9,7 @@ Make dataset for multi-task net by combining detection(yolo format) and segmenta
 """
 
 # You only need to change this line to your dataset root path
-root_path = "/mnt/ext/data/temp"
+root_path = "/mnt/ext/data/traffic_all"
 if not os.path.exists(root_path):
     print(f"{root_path} is not exist, please check!")
     exit(0)
@@ -26,7 +26,7 @@ masks_path = root_path + "/masks"
 if not os.path.exists(masks_path):
     os.makedirs(masks_path)
 
-src_paths = ["temp1", "temp2"]
+src_paths = ["det", "seg"]
 types = ["train", "val"]
 
 for type in types:
@@ -94,3 +94,35 @@ for type in types:
             os.popen(f"cp -rv {mask_path} {dst_path}")
 
             print()
+
+
+# # 寻找原图分辨率
+# for name in sorted(os.listdir("det/images/val")):
+#     path = os.path.join("pictures", name)
+
+#     if os.path.exists(path):
+#         print(f"copy {path} to temp/val")
+#         os.popen(f"cp -rv {path} temp/val")
+#         os.popen("sync")
+
+# # 创建空标签
+# labels = sorted(os.listdir("all-traffic/labels/train"))
+
+# for name in sorted(os.listdir("all-traffic/images/train")):
+#     name = name.replace(".jpg", ".txt")
+#     if name not in labels:
+#         path = os.path.join("temp", name)
+#         with open(path, "w") as f:
+#             print(f"write {path}")
+
+# # 创建空掩图    
+# masks = sorted(os.listdir("all-traffic/masks/val"))
+
+# for name in sorted(os.listdir("all-traffic/images/val")):
+#     name = name.replace(".jpg", "_bin.png")
+#     if name not in masks:
+#         path = os.path.join("temp", name)
+#         img = cv2.imread(os.path.join("all-traffic/images/val", name.replace("_bin.png", ".jpg")))
+#         mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+#         cv2.imwrite(path, mask)
+#         print(f"write {path}")
